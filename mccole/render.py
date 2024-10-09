@@ -5,18 +5,11 @@ from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader
 from markdown import markdown
 from pathlib import Path
-import shortcodes
 import sys
 
 from .util import find_files, find_key_defs, get_inclusion, load_config, write_file
 
 
-FIGURE = """\
-<figure id="{id}">
-  <img src="{src}" alt="{alt}">
-  <figcaption>{caption}</figcaption>
-</figure>
-"""
 MARKDOWN_EXTENSIONS = ["attr_list", "def_list", "fenced_code", "md_in_html", "tables"]
 
 
@@ -25,7 +18,6 @@ def render(opt):
     config = load_config(opt.config)
     skips = config["skips"] | {opt.out}
     env = Environment(loader=FileSystemLoader(opt.templates))
-    parser = make_shortcodes_parser()
 
     files = find_files(opt, skips)
     sections = {
@@ -38,7 +30,7 @@ def render(opt):
         "glossary": find_key_defs(sections, "glossary"),
     }
     for path, info in sections.items():
-        info["doc"] = render_markdown(env, opt, parser, extras, path, info["content"])
+        info["doc"] = render_markdown(env, opt, extras, path, info["content"])
 
     for path, info in files.items():
         result = str(info["doc"]) if path.suffix == ".md" else info["content"]
@@ -168,13 +160,6 @@ def make_output_path(output_dir, renames, source_path):
     return Path(output_dir, source_path)
 
 
-def make_shortcodes_parser():
-    """Build shortcodes parser for Markdown-to-Markdown transformation."""
-    parser = shortcodes.Parser()
-    parser.register(shortcode_figure, "figure")
-    return parser
-
-
 def parse_args(parser):
     """Parse command-line arguments."""
     parser.add_argument("--config", type=str, default="pyproject.toml", help="optional configuration file")
@@ -185,11 +170,10 @@ def parse_args(parser):
     parser.add_argument("--templates", type=str, default="templates", help="templates directory")
 
 
-def render_markdown(env, opt, parser, extras, source_path, content):
+def render_markdown(env, opt, extras, source_path, content):
     """Convert Markdown to HTML."""
-    expanded = parser.parse(content)
     template = choose_template(env, source_path)
-    html = markdown(expanded, extensions=MARKDOWN_EXTENSIONS)
+    html = markdown(content, extensions=MARKDOWN_EXTENSIONS)
     html = template.render(content=html, css_file=opt.css, icon_file=opt.icon)
 
     transformers = (
@@ -207,14 +191,6 @@ def render_markdown(env, opt, parser, extras, source_path, content):
         func(doc, source_path, extras)
 
     return doc
-
-
-def shortcode_figure(pargs, kwargs, context):
-    """Convert figure shortcode."""
-    actual_keys = set(kwargs.keys())
-    assert actual_keys == {"id", "src", "alt", "caption"}, \
-        f"Bad 'figure' shortcode with keys {actual_keys}"
-    return FIGURE.format(**kwargs)
 
 
 def _insert_term_list(doc, source_path, seen, extras):
